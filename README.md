@@ -2,7 +2,13 @@
 
 原版《滚动的天空》在 Windows 上直接双击开玩：不用安卓模拟器、不用管理员权限、无广告无内购，自带 41 个官方关卡与全部 BGM，并附带一个自动游玩 Bot（实验）。
 
-完整成品包（515MB，含 41 首离线音乐）在百度网盘：见仓库说明或本文末尾。
+## 下载
+
+**成品整包（515 MB，含 41 首离线 BGM）**
+
+- 百度网盘：<https://pan.baidu.com/s/1LewplGkeqRsGTiRQJGDujg> 提取码 `RSPC`
+- GitHub Release：<https://github.com/gunmigunm/rolling-sky-pc/releases/tag/v1.0.0> 里的 `RollingSky.exe` 只是启动器外壳（8,704 字节），**必须配合同目录下的 `game\` 数据文件夹**才能跑；单独下这个 exe 跑不起来，请用网盘整包，或按下面的「从源码重建」自己生成。
+- 不想下 500MB：也可以只下仓库源码，用 `build.ps1` 拉构建与音乐自行组装。
 
 ## 已实现
 
@@ -54,6 +60,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 脚本会下载 WebGL 构建与 41 首音乐、编译启动器、组装出可直接双击的目录。
+
+CI 侧：`.github/workflows/release.yml` 会在 `launcher/launcher.cs` 变更时用 Windows 自带 `csc` 编译启动器，并自动覆盖 Release 附件 `RollingSky.exe`（GitHub Actions 的机器编译，与本地同一份源码）。
 
 ## 版权
 
