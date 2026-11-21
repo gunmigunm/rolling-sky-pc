@@ -1,0 +1,68 @@
+name: build-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'launcher/launcher.cs'
+      - '.github/workflows/release.yml'
+      - 'RELEASE_NOTES.md'
+  workflow_dispatch:
+    inputs:
+      attach_full_zip:
+        description: 'true = 同时把完整包挂到 Release 附件（需 runner 能下载直链）'
+        type: boolean
+        default: false
+      full_zip_url:
+        description: '完整包直链（仅 attach_full_zip=true 时使用）'
+        type: string
+        default: 'https://aka.doubaocdn.com/s/aTgt4UdGkt'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 编译启动器（csc / .NET Framework，与本地一致）
+        shell: pwsh
+        run: |
+          $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (!(Test-Path $csc)) { throw "csc not found" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & $csc /nologo /target:winexe /out:"dist\滚动的天空.exe" "launcher\launcher.cs"
+          if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
+          Get-Item "dist\滚动的天空.exe" | Format-List Name,Length
+          (Get-FileHash "dist\滚动的天空.exe" -Algorithm SHA256).Hash
+
+      - name: 创建/更新 Release 并上传 exe 附件
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v1.0.0
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --title "滚动的天空 PC 版 v1.0.0" --notes-file RELEASE_NOTES.md
+            if ($LASTEXITCODE -ne 0) { throw "release create failed" }
+          }
+          gh release upload $env:TAG "dist\滚动的天空.exe" --clobber
+          if ($LASTEXITCODE -ne 0) { throw "release upload failed" }
+          gh release view $env:TAG --json assets | Out-String | Write-Host
+
+      - name: 可选 - 挂完整包附件
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.attach_full_zip }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v1.0.0
+        run: |
+          $ErrorActionPreference = "Stop"
+          curl.exe -L --retry 3 --retry-delay 5 -o rs_pc_full.zip "${{ inputs.full_zip_url }}"
+          Get-Item rs_pc_full.zip | Format-List Length
+          gh release upload $env:TAG rs_pc_full.zip --clobber
+          if ($LASTEXITCODE -ne 0) { throw "zip upload failed" }
