@@ -1,6 +1,5 @@
-* text=auto
-
-*.cs  linguist-language="C#"  linguist-detectable=true  linguist-vendored=false  linguist-generated=false
+# 让 GitHub 把启动器源码识别为 C#（默认会被漏算）
+*.cs linguist-language=C#
 *.ps1 linguist-language=PowerShell
-*.js  linguist-language=JavaScript
+*.js linguist-language=JavaScript
 *.exe binary
