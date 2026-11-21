@@ -86,18 +86,48 @@
       'position:fixed', 'left:8px', 'bottom:8px', 'z-index:99',
       'font:12px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif', 'color:#fff',
       'background:rgba(0,0,0,.62)', 'padding:8px 10px', 'border-radius:10px',
-      'pointer-events:auto', 'white-space:pre', 'user-select:none',
-      'box-shadow:0 4px 14px rgba(0,0,0,.35)', 'max-width:230px'
+      'pointer-events:auto', 'white-space:normal', 'user-select:none',
+      'box-shadow:0 4px 14px rgba(0,0,0,.35)', 'width:210px', 'box-sizing:border-box'
     ].join(';');
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px';
+    var title = document.createElement('span');
+    title.style.cssText = 'font:600 12px system-ui;opacity:.9';
+    title.textContent = '滚动的天空 · 控制';
+    var fold = document.createElement('button');
+    fold.style.cssText = 'font:11px system-ui;color:#fff;background:transparent;border:1px solid #666;' +
+      'border-radius:6px;padding:2px 8px;cursor:pointer';
+    fold.textContent = '收起';
+    head.appendChild(title); head.appendChild(fold);
+    el.appendChild(head);
+
+    var bodyEl = document.createElement('div');
+    el.appendChild(bodyEl);
+    state.folded = false;
+    fold.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    fold.addEventListener('click', function () {
+      state.folded = !state.folded;
+      bodyEl.style.display = state.folded ? 'none' : 'block';
+      fold.textContent = state.folded ? '展开' : '收起';
+    });
 
     var tip = document.createElement('div');
     tip.style.cssText = 'opacity:.75;font-size:11px;margin-bottom:6px';
-    tip.textContent = 'F8 自动游玩 · F9 跳速 · F10 视觉 · 方向键/AD 移动 · 空格 跳';
-    el.appendChild(tip);
+    tip.textContent = '按钮直接点 · P 自动游玩 · V 视觉 · [ ] 调节奏 · 方向键/AD 移动 · 空格 跳';
+    bodyEl.appendChild(tip);
+
+    var autoBtn = document.createElement('button');
+    autoBtn.style.cssText = 'width:100%;font:600 13px system-ui;color:#fff;background:#1f5f8b;' +
+      'border:1px solid #4da3ff;border-radius:8px;padding:7px 0;cursor:pointer;margin-bottom:5px';
+    autoBtn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    autoBtn.addEventListener('click', function () { toggle(); });
+    bodyEl.appendChild(autoBtn);
+    state.autoBtn = autoBtn;
 
     var line = document.createElement('div');
     line.style.cssText = 'font-size:11px;opacity:.9;margin-bottom:6px';
-    el.appendChild(line);
+    bodyEl.appendChild(line);
     state.statusEl = line;
 
     function row(label, min, max, step, value, fmt, onInput) {
@@ -128,7 +158,7 @@
       input.addEventListener('keydown', function (e) { e.stopPropagation(); });
 
       wrap.appendChild(lab); wrap.appendChild(input);
-      el.appendChild(wrap);
+      bodyEl.appendChild(wrap);
       return { set: function (v) { input.value = v; val.textContent = fmt(v); } };
     }
 
@@ -155,7 +185,9 @@
     visionBtn.addEventListener('click', function () {
       cfg.vision = !cfg.vision; save(); paintVision(); setStatus();
     });
-    el.appendChild(visionBtn);
+    bodyEl.appendChild(visionBtn);
+    state.visionBtn = visionBtn;
+    state.paintVision = paintVision;
 
     var resetBtn = document.createElement('button');
     resetBtn.style.cssText = 'margin-top:5px;width:100%;font:11px system-ui;color:#bbb;background:transparent;' +
@@ -168,7 +200,7 @@
       sensRow.set(cfg.sens); jumpRow.set(cfg.jumpMs); dragRow.set(cfg.dragMs);
       setStatus();
     });
-    el.appendChild(resetBtn);
+    bodyEl.appendChild(resetBtn);
 
     document.body.appendChild(el);
     state.panel = el;
@@ -176,10 +208,15 @@
   }
 
   function setStatus() {
+    if (state.autoBtn) {
+      state.autoBtn.textContent = state.on ? '■ 停止自动游玩' : '▶ 开始自动游玩';
+      state.autoBtn.style.background = state.on ? '#8b1f1f' : '#1f5f8b';
+      state.autoBtn.style.borderColor = state.on ? '#ff6b6b' : '#4da3ff';
+    }
     if (!state.statusEl) return;
     state.statusEl.textContent = state.on
-      ? '自动游玩：开（F8 关）' + (cfg.vision ? ' · 视觉开' : '')
-      : '自动游玩：关（F8 开）';
+      ? '自动游玩：开（点按钮或按 P 关）' + (cfg.vision ? ' · 视觉开' : '')
+      : '自动游玩：关（点按钮或按 P 开）';
   }
 
   /* ---------- 自动游玩 ---------- */
@@ -250,15 +287,16 @@
     if (!typing && (k === 'ArrowLeft' || k === 'a' || k === 'A')) { throttledNudge(-1); e.preventDefault(); }
     else if (!typing && (k === 'ArrowRight' || k === 'd' || k === 'D')) { throttledNudge(1); e.preventDefault(); }
     else if (!typing && (k === ' ' || k === 'Spacebar')) { tap(); e.preventDefault(); }
-    else if (k === 'F8') { toggle(); e.preventDefault(); }
-    else if (k === 'F9') {
-      cfg.jumpMs = cfg.jumpMs >= 1200 ? 320 : cfg.jumpMs + 280;
+    else if (k === 'p' || k === 'P') { toggle(); e.preventDefault(); }
+    else if (k === 'v' || k === 'V') {
+      cfg.vision = !cfg.vision; save(); setStatus();
+      if (state.paintVision) state.paintVision();
+      e.preventDefault();
+    } else if (!typing && (k === '[' || k === '【' || k === ']' || k === '】')) {
+      cfg.jumpMs = Math.min(1500, Math.max(250, cfg.jumpMs + (k === ']' || k === '】' ? 40 : -40)));
       save();
       if (state.jumpRow) state.jumpRow.set(cfg.jumpMs);
       setStatus();
-      e.preventDefault();
-    } else if (k === 'F10') {
-      cfg.vision = !cfg.vision; save(); setStatus();
       e.preventDefault();
     }
   }, true);
