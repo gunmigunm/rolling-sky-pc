@@ -34,13 +34,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v1.0.0
         run: |
-          $ErrorActionPreference = "Stop"
+          "=== upload attempt $((Get-Date).ToUniversalTime().ToString('o')) ===" | Out-File -Encoding utf8 UPLOAD.log
           gh release view $env:TAG *> $null
+          "view exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 UPLOAD.log
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG --title "Rolling Sky PC v1.0.0" --notes-file RELEASE_NOTES.md
+            gh release create $env:TAG --title "Rolling Sky PC v1.0.0" --notes-file RELEASE_NOTES.md 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
           }
-          gh release upload $env:TAG "dist/RollingSky.exe" --clobber
-          gh release view $env:TAG --json assets | Out-String | Write-Host
+          & gh release upload $env:TAG "dist/RollingSky.exe" --clobber 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
+          "upload exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 UPLOAD.log
+          & gh release view $env:TAG --json assets 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
 
       - name: record assets
         if: always()
@@ -54,6 +56,6 @@ jobs:
           Get-Content ASSETS.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ASSETS.json ASSETS.txt
-          git commit -m "record release assets"
+          git add ASSETS.json ASSETS.txt UPLOAD.log
+          git commit -m "record release assets and upload log" --allow-empty
           git push
