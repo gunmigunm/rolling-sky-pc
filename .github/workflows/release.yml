@@ -6,6 +6,7 @@ on:
     paths:
       - "launcher/launcher.cs"
       - ".github/workflows/release.yml"
+      - "RELEASE_NOTES.md"
   workflow_dispatch:
 
 permissions:
@@ -43,6 +44,8 @@ jobs:
           gh release upload $env:TAG "RollingSky.exe" --clobber
           Pop-Location
           if ($LASTEXITCODE -ne 0) { throw "upload failed" }
+          gh release edit $env:TAG --notes-file RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw "notes sync failed" }
           gh release view $env:TAG --json assets | Out-String | Write-Host
 
       - name: drop legacy default.exe asset
