@@ -8,15 +8,6 @@ on:
       - '.github/workflows/release.yml'
       - 'RELEASE_NOTES.md'
   workflow_dispatch:
-    inputs:
-      attach_full_zip:
-        description: 'true = 同时把完整包挂到 Release 附件'
-        type: boolean
-        default: false
-      full_zip_url:
-        description: '完整包直链（仅 attach_full_zip=true 时使用）'
-        type: string
-        default: 'https://aka.doubaocdn.com/s/aTgt4UdGkt'
 
 permissions:
   contents: write
@@ -34,17 +25,16 @@ jobs:
           $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (!(Test-Path $csc)) { throw "csc not found" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          & $csc /nologo /target:winexe /out:"dist\RollingSky.exe" "launcher\launcher.cs"
+          & $csc /nologo /target:winexe /out:dist/RollingSky.exe launcher/launcher.cs
           if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
-          Get-Item "dist\RollingSky.exe" | Format-List Name,Length
-          (Get-FileHash "dist\RollingSky.exe" -Algorithm SHA256).Hash
+          Copy-Item "dist/RollingSky.exe" "dist/滚动的天空.exe" -Force
+          Get-ChildItem dist | Format-Table Name,Length
 
-      - name: 2 建 Release 并上传 exe 附件
+      - name: 2 建 Release 并上传附件
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v1.0.0
-          REPO: ${{ github.repository }}
         run: |
           $ErrorActionPreference = "Stop"
           gh release view $env:TAG *> $null
@@ -52,33 +42,11 @@ jobs:
             gh release create $env:TAG --title "滚动的天空 PC 版 v1.0.0" --notes-file RELEASE_NOTES.md
             if ($LASTEXITCODE -ne 0) { throw "release create failed" }
           }
-          $releaseId = gh release view $env:TAG --json id -q .id
-          $enc = [uri]::EscapeDataString('滚动的天空.exe')
-          $uploadUrl = "https://uploads.github.com/repos/$($env:REPO)/releases/$releaseId/assets?name=$enc"
-          Write-Host "POST $uploadUrl"
-          $resp = & curl.exe -sS -X POST -H "Authorization: Bearer $env:GH_TOKEN" -H "Content-Type: application/x-msdownload" --data-binary "@dist\RollingSky.exe" $uploadUrl
-          Write-Host $resp
-          if ($resp -notmatch 'already_exists' -and $resp -notmatch '"state":"uploaded"') {
-            throw "asset upload unexpected response"
-          }
+          gh release upload $env:TAG "dist/RollingSky.exe" --clobber
+          if ($LASTEXITCODE -ne 0) { throw "upload failed" }
+          gh release view $env:TAG --json assets | Out-String | Write-Host
 
-      - name: 3 清掉名字异常的旧附件
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v1.0.0
-          REPO: ${{ github.repository }}
-        run: |
-          $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
-          foreach ($a in $rel.assets) {
-            if ($a.name -eq 'default.exe') {
-              $restId = ($a.apiUrl -split '/')[-1]
-              Write-Host "delete $($a.name) $restId"
-              gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
-            }
-          }
-
-      - name: 4 回写附件清单（无论成败都跑）
+      - name: 3 记录附件清单（无论成败都跑）
         if: always()
         shell: pwsh
         env:
