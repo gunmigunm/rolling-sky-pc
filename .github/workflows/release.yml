@@ -52,7 +52,21 @@ jobs:
           }
           gh release upload $env:TAG "dist\滚动的天空.exe" --clobber
           if ($LASTEXITCODE -ne 0) { throw "release upload failed" }
-          gh release view $env:TAG --json assets | Out-String | Write-Host
+
+      - name: 回写附件清单（用于核验）
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v1.0.0
+        run: |
+          gh release view $env:TAG --json tagName,url,assets | Out-File -Encoding utf8 ASSETS.json
+          gh release view $env:TAG --json assets -q '.assets[] | "\(.name)  \(.size) bytes  \(.state)"' | Out-File -Encoding utf8 ASSETS.txt
+          Get-Content ASSETS.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ASSETS.json ASSETS.txt
+          git commit -m "record release assets"
+          git push
 
       - name: 可选 - 挂完整包附件
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.attach_full_zip }}
