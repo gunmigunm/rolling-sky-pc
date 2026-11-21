@@ -33,10 +33,10 @@ jobs:
           $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (!(Test-Path $csc)) { throw "csc not found" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          & $csc /nologo /target:winexe /out:"dist\滚动的天空.exe" "launcher\launcher.cs"
+          & $csc /nologo /target:winexe /out:"dist/滚动的天空.exe" "launcher/launcher.cs"
           if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
-          Get-Item "dist\滚动的天空.exe" | Format-List Name,Length
-          (Get-FileHash "dist\滚动的天空.exe" -Algorithm SHA256).Hash
+          Get-Item "dist/滚动的天空.exe" | Format-List Name,Length
+          (Get-FileHash "dist/滚动的天空.exe" -Algorithm SHA256).Hash
 
       - name: 创建/更新 Release 并上传 exe 附件
         shell: pwsh
@@ -46,28 +46,30 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           $ErrorActionPreference = "Stop"
-          Copy-Item "dist\滚动的天空.exe" "dist\RollingSky.exe" -Force
+          Copy-Item "dist/滚动的天空.exe" "dist/RollingSky.exe" -Force
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $env:TAG --title "滚动的天空 PC 版 v1.0.0" --notes-file RELEASE_NOTES.md
             if ($LASTEXITCODE -ne 0) { throw "release create failed" }
           }
-          gh release upload $env:TAG "dist\RollingSky.exe" --clobber
-          if ($LASTEXITCODE -ne 0) { throw "release upload failed" }
 
-          # gh 在非 ASCII 文件名下会落成 default.exe，这里清掉并按中文名重命名
+          # 清掉所有旧附件（gh release upload 在中文名下会落成 default.exe）
           $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
           foreach ($a in $rel.assets) {
             $restId = ($a.apiUrl -split '/')[-1]
-            if ($a.name -eq 'default.exe') {
-              gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
-            }
+            gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
           }
-          $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
-          $target = $rel.assets | Where-Object { $_.name -eq 'RollingSky.exe' } | Select-Object -First 1
-          if ($null -eq $target) { throw "RollingSky.exe asset missing" }
-          $restId = ($target.apiUrl -split '/')[-1]
-          gh api -X PATCH "repos/$($env:REPO)/releases/assets/$restId" -f name="滚动的天空.exe" | Out-Null
+
+          # 直接走 uploads API，显式指定中文附件名
+          $releaseId = gh release view $env:TAG --json id -q .id
+          $enc = [uri]::EscapeDataString('滚动的天空.exe')
+          $resp = curl.exe -sS -X POST `
+            -H "Authorization: Bearer $env:GH_TOKEN" `
+            -H "Content-Type: application/x-msdownload" `
+            --data-binary "@dist/RollingSky.exe" `
+            "https://uploads.github.com/repos/$($env:REPO)/releases/$releaseId/assets?name=$enc"
+          Write-Host $resp
+          if ($resp -notmatch '"state"\s*:\s*"uploaded"') { throw "asset upload failed: $resp" }
           gh release view $env:TAG --json assets | Out-String | Write-Host
 
       - name: 回写附件清单（用于核验）
