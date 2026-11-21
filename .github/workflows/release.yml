@@ -24,9 +24,9 @@ jobs:
           $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (!(Test-Path $csc)) { throw "csc not found" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          & $csc /nologo /target:winexe /out:dist/RollingSky.exe launcher/launcher.cs
-          if ($LASTEXITCODE -ne 0) { throw "csc failed" }
-          Get-Item dist/RollingSky.exe | Format-List Name,Length
+          & $csc /nologo /target:winexe /out:"dist\RollingSky.exe" "launcher\launcher.cs"
+          if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
+          Get-Item "dist\RollingSky.exe" | Format-List Name,Length
 
       - name: create release and upload asset
         shell: pwsh
@@ -34,17 +34,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v1.0.0
         run: |
-          "=== upload attempt $((Get-Date).ToUniversalTime().ToString('o')) ===" | Out-File -Encoding utf8 UPLOAD.log
+          $ErrorActionPreference = "Stop"
           gh release view $env:TAG *> $null
-          "view exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 UPLOAD.log
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG --title "Rolling Sky PC v1.0.0" --notes-file RELEASE_NOTES.md 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
+            gh release create $env:TAG --title "Rolling Sky PC v1.0.0" --notes-file RELEASE_NOTES.md
           }
-          & gh release upload $env:TAG "dist/RollingSky.exe" --clobber 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
-          "upload exit=$LASTEXITCODE" | Out-File -Append -Encoding utf8 UPLOAD.log
-          & gh release view $env:TAG --json assets 2>&1 | Out-File -Append -Encoding utf8 UPLOAD.log
+          Push-Location dist
+          gh release upload $env:TAG "RollingSky.exe" --clobber
+          Pop-Location
+          if ($LASTEXITCODE -ne 0) { throw "upload failed" }
+          gh release view $env:TAG --json assets | Out-String | Write-Host
 
-      - name: record assets
+      - name: drop legacy default.exe asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v1.0.0
+          REPO: ${{ github.repository }}
+        run: |
+          $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
+          foreach ($a in $rel.assets) {
+            if ($a.name -eq 'default.exe') {
+              $restId = ($a.apiUrl -split '/')[-1]
+              Write-Host "deleting $($a.name) $restId"
+              gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
+            }
+          }
+
+      - name: record
         if: always()
         shell: pwsh
         env:
@@ -56,6 +73,6 @@ jobs:
           Get-Content ASSETS.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ASSETS.json ASSETS.txt UPLOAD.log
-          git commit -m "record release assets and upload log" --allow-empty
+          git add -A
+          git commit -m "record release assets" --allow-empty
           git push
