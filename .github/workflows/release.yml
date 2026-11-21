@@ -2,11 +2,10 @@ name: build-release
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
-      - 'launcher/launcher.cs'
-      - '.github/workflows/release.yml'
-      - 'RELEASE_NOTES.md'
+      - "launcher/launcher.cs"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
@@ -18,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 1 编译启动器
+      - name: compile launcher
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -26,11 +25,10 @@ jobs:
           if (!(Test-Path $csc)) { throw "csc not found" }
           New-Item -ItemType Directory -Force dist | Out-Null
           & $csc /nologo /target:winexe /out:dist/RollingSky.exe launcher/launcher.cs
-          if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
-          Copy-Item "dist/RollingSky.exe" "dist/滚动的天空.exe" -Force
-          Get-ChildItem dist | Format-Table Name,Length
+          if ($LASTEXITCODE -ne 0) { throw "csc failed" }
+          Get-Item dist/RollingSky.exe | Format-List Name,Length
 
-      - name: 2 建 Release 并上传附件
+      - name: create release and upload asset
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,14 +37,12 @@ jobs:
           $ErrorActionPreference = "Stop"
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG --title "滚动的天空 PC 版 v1.0.0" --notes-file RELEASE_NOTES.md
-            if ($LASTEXITCODE -ne 0) { throw "release create failed" }
+            gh release create $env:TAG --title "Rolling Sky PC v1.0.0" --notes-file RELEASE_NOTES.md
           }
           gh release upload $env:TAG "dist/RollingSky.exe" --clobber
-          if ($LASTEXITCODE -ne 0) { throw "upload failed" }
           gh release view $env:TAG --json assets | Out-String | Write-Host
 
-      - name: 3 记录附件清单（无论成败都跑）
+      - name: record assets
         if: always()
         shell: pwsh
         env:
@@ -54,7 +50,7 @@ jobs:
           TAG: v1.0.0
         run: |
           gh release view $env:TAG --json tagName,url,assets | Out-File -Encoding utf8 ASSETS.json
-          gh release view $env:TAG --json assets -q '.assets[] | "\(.name)  \(.size) bytes  \(.state)"' | Out-File -Encoding utf8 ASSETS.txt
+          gh release view $env:TAG --json assets -q '.assets[] | "\(.name)  \(.size)  \(.state)"' | Out-File -Encoding utf8 ASSETS.txt
           Get-Content ASSETS.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
