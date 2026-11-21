@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       attach_full_zip:
-        description: 'true = 同时把完整包挂到 Release 附件（需 runner 能下载直链）'
+        description: 'true = 同时把完整包挂到 Release 附件'
         type: boolean
         default: false
       full_zip_url:
@@ -27,18 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 编译启动器（csc / .NET Framework，与本地一致）
+      - name: 1 编译启动器
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (!(Test-Path $csc)) { throw "csc not found" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          & $csc /nologo /target:winexe /out:"dist/滚动的天空.exe" "launcher/launcher.cs"
+          & $csc /nologo /target:winexe /out:"dist\RollingSky.exe" "launcher\launcher.cs"
           if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
-          Get-Item "dist/滚动的天空.exe" | Format-List Name,Length
-          (Get-FileHash "dist/滚动的天空.exe" -Algorithm SHA256).Hash
+          Get-Item "dist\RollingSky.exe" | Format-List Name,Length
+          (Get-FileHash "dist\RollingSky.exe" -Algorithm SHA256).Hash
 
-      - name: 创建/更新 Release 并上传 exe 附件
+      - name: 2 建 Release 并上传 exe 附件
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -46,33 +47,39 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           $ErrorActionPreference = "Stop"
-          Copy-Item "dist/滚动的天空.exe" "dist/RollingSky.exe" -Force
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $env:TAG --title "滚动的天空 PC 版 v1.0.0" --notes-file RELEASE_NOTES.md
             if ($LASTEXITCODE -ne 0) { throw "release create failed" }
           }
-
-          # 清掉所有旧附件（gh release upload 在中文名下会落成 default.exe）
-          $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
-          foreach ($a in $rel.assets) {
-            $restId = ($a.apiUrl -split '/')[-1]
-            gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
-          }
-
-          # 直接走 uploads API，显式指定中文附件名
           $releaseId = gh release view $env:TAG --json id -q .id
           $enc = [uri]::EscapeDataString('滚动的天空.exe')
-          $resp = curl.exe -sS -X POST `
-            -H "Authorization: Bearer $env:GH_TOKEN" `
-            -H "Content-Type: application/x-msdownload" `
-            --data-binary "@dist/RollingSky.exe" `
-            "https://uploads.github.com/repos/$($env:REPO)/releases/$releaseId/assets?name=$enc"
+          $uploadUrl = "https://uploads.github.com/repos/$($env:REPO)/releases/$releaseId/assets?name=$enc"
+          Write-Host "POST $uploadUrl"
+          $resp = & curl.exe -sS -X POST -H "Authorization: Bearer $env:GH_TOKEN" -H "Content-Type: application/x-msdownload" --data-binary "@dist\RollingSky.exe" $uploadUrl
           Write-Host $resp
-          if ($resp -notmatch '"state"\s*:\s*"uploaded"') { throw "asset upload failed: $resp" }
-          gh release view $env:TAG --json assets | Out-String | Write-Host
+          if ($resp -notmatch 'already_exists' -and $resp -notmatch '"state":"uploaded"') {
+            throw "asset upload unexpected response"
+          }
 
-      - name: 回写附件清单（用于核验）
+      - name: 3 清掉名字异常的旧附件
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v1.0.0
+          REPO: ${{ github.repository }}
+        run: |
+          $rel = gh release view $env:TAG --json assets | ConvertFrom-Json
+          foreach ($a in $rel.assets) {
+            if ($a.name -eq 'default.exe') {
+              $restId = ($a.apiUrl -split '/')[-1]
+              Write-Host "delete $($a.name) $restId"
+              gh api -X DELETE "repos/$($env:REPO)/releases/assets/$restId" | Out-Null
+            }
+          }
+
+      - name: 4 回写附件清单（无论成败都跑）
+        if: always()
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,16 +93,3 @@ jobs:
           git add ASSETS.json ASSETS.txt
           git commit -m "record release assets"
           git push
-
-      - name: 可选 - 挂完整包附件
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.attach_full_zip }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v1.0.0
-        run: |
-          $ErrorActionPreference = "Stop"
-          curl.exe -L --retry 3 --retry-delay 5 -o rs_pc_full.zip "${{ inputs.full_zip_url }}"
-          Get-Item rs_pc_full.zip | Format-List Length
-          gh release upload $env:TAG rs_pc_full.zip --clobber
-          if ($LASTEXITCODE -ne 0) { throw "zip upload failed" }
